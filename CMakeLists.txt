@@ -36,14 +36,14 @@ endforeach()
 add_library(glad STATIC "${CMAKE_SOURCE_DIR}/thirdParty/glad/src/glad.c")
 target_include_directories(glad PUBLIC "${CMAKE_SOURCE_DIR}/thirdParty/glad/include")
 
-# 收集项目中所有的源文件（可选，如果你想自动包含所有.cpp文件）
-# file(GLOB_RECURSE PROJECT_SOURCES "${CMAKE_SOURCE_DIR}/src/*.cpp")
+# 自动收集src目录下的所有.cpp文件
+file(GLOB PROJECT_SOURCES "${CMAKE_SOURCE_DIR}/src/*.cpp")
+message(STATUS "Found source files: ${PROJECT_SOURCES}")
 
 # 添加可执行文件
 add_executable(main 
     main.cpp
-    src/Window.cpp
-    src/Framebuffer.cpp
+    ${PROJECT_SOURCES}
 )
 
 # 链接库（现在不需要GLFW和GLAD了，只需要Windows系统库）

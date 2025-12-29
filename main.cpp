@@ -12,7 +12,7 @@ Color blue(0, 0, 255, 255);
 Color yellow  = {  0, 200, 255, 255};
 
 void line(int ax, int ay, int bx, int by, Framebuffer& framebuffer, Color color = white) {
-    for (float t=0.; t<1.; t+=.02) {
+    for (float t=0.; t<1.; t+=.01) {
         int x = std::round( ax + (bx-ax)*t );
         int y = std::round( ay + (by-ay)*t );
         framebuffer.setPixel(x, y, color);

@@ -12,8 +12,8 @@ Color blue(0, 0, 255, 255);
 Color yellow  = {  0, 200, 255, 255};
 
 void line(int ax, int ay, int bx, int by, Framebuffer& framebuffer, Color color = white) {
-    for (float t=0.; t<1.; t+=.01) {
-        int x = std::round( ax + (bx-ax)*t );
+     for (int x=ax; x<=bx; x++) {
+        float t = (x-ax) / static_cast<float>(bx-ax);
         int y = std::round( ay + (by-ay)*t );
         framebuffer.setPixel(x, y, color);
     }
@@ -70,10 +70,11 @@ int main(int argc, char** argv) {
     int ax =  7, ay =  3;
     int bx = 12, by = 37;
     int cx = 62, cy = 53;
-    line(ax, ay, bx, by, framebuffer, blue);
-    line(cx, cy, bx, by, framebuffer, green);
-    line(cx, cy, ax, ay, framebuffer, yellow);
-    line(ax, ay, cx, cy, framebuffer, red);
+    //line(ax, ay, bx, by, framebuffer, blue);
+    // line(cx, cy, bx, by, framebuffer, green);
+    // line(cx, cy, ax, ay, framebuffer, yellow);
+    // line(ax, ay, cx, cy, framebuffer, red);
+    line(0, 0, 100, 100, framebuffer, red);
 
     std::cout << "Window created: " << width << "x" << height << std::endl;
     std::cout << "Press ESC or close window to exit" << std::endl;

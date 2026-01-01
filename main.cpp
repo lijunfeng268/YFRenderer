@@ -14,26 +14,26 @@ Color green(0, 255, 0, 255);
 Color blue(0, 0, 255, 255);
 Color yellow  = {  0, 200, 255, 255};
 
-void line(int ax, int ay, int bx, int by, Framebuffer& framebuffer, Color color = white) {
-    bool steep = std::abs(ax-bx) < std::abs(ay-by);
+void line(Vector2i a, Vector2i b, Framebuffer& framebuffer, Color color = white) {
+    bool steep = std::abs(a.x-b.x) < std::abs(a.y-b.y);
     if (steep) { // if the line is steep, we transpose the image
-        std::swap(ax, ay);
-        std::swap(bx, by);
+        std::swap(a.x, a.y);
+        std::swap(b.x, b.y);
     }
-    if (ax>bx) { // make it left−to−right
-        std::swap(ax, bx);
-        std::swap(ay, by);
+    if (a.x>b.x) { // make it left−to−right
+        std::swap(a.x, b.x);
+        std::swap(a.y, b.y);
     }
-    int y = ay;
+    int y = a.y;
     int ierror = 0;
-    for (int x=ax; x<=bx; x++) {
+    for (int x=a.x; x<=b.x; x++) {
         if (steep) // if transposed, de−transpose
             framebuffer.setPixel(y, x, color);
         else
             framebuffer.setPixel(x, y, color);
-        ierror += 2 * std::abs(by-ay);
-        y += (by > ay ? 1 : -1) * (ierror > bx - ax);
-        ierror -= 2 * (bx-ax)   * (ierror > bx - ax);
+        ierror += 2 * std::abs(b.y-a.y);
+        y += (b.y > a.y ? 1 : -1) * (ierror > b.x - a.x);
+        ierror -= 2 * (b.x-a.x)   * (ierror > b.x - a.x);
     }
 }
 
@@ -99,7 +99,7 @@ void lineTest()
     for (int i=0; i<(1<<10); i++) {
         int ax = rand()%width, ay = rand()%height;
         int bx = rand()%width, by = rand()%height;
-        line(ax, ay, bx, by, framebuffer,
+        line(Vector2i{ax, ay}, Vector2i{bx, by}, framebuffer,
             { static_cast<unsigned char>(rand() % 255),
             static_cast<unsigned char>(rand() % 255),
             static_cast<unsigned char>(rand() % 255),
@@ -134,16 +134,58 @@ void objTest()
         // Vector3 a = model.Position[face.vtxIdx[0]];
         // Vector3 b = model.Position[face.vtxIdx[1]];
         // Vector3 c = model.Position[face.vtxIdx[2]];
-        line(ax, ay, bx, by, framebuffer, red);
-        line(bx, by, cx, cy, framebuffer, red);
-        line(cx, cy, ax, ay, framebuffer, red);
+        line(Vector2i{ax, ay}, Vector2i{bx, by}, framebuffer, red);
+        line(Vector2i{bx, by}, Vector2i{cx, cy}, framebuffer, red);
+        line(Vector2i{cx, cy}, Vector2i{ax, ay}, framebuffer, red);
     }
     draw("Model Viewer",framebuffer,width,height);
 }
 
+void triangle(Framebuffer& framebuffer,Vector2i t0, Vector2i t1, Vector2i t2, Color color) 
+{
+//三角形面积为0
+    if (t0.y==t1.y && t0.y==t2.y) return;
+    //根据y的大小对坐标进行排序
+    if (t0.y>t1.y) std::swap(t0, t1);
+    if (t0.y>t2.y) std::swap(t0, t2);
+    if (t1.y>t2.y) std::swap(t1, t2);
+    int total_height = t2.y-t0.y;
+    //以高度差作为循环控制变量，此时不需要考虑斜率，因为着色完后每行都会被填充
+    for (int i=0; i<total_height; i++) {
+        //根据t1将三角形分割为上下两部分
+        bool second_half = i>t1.y-t0.y || t1.y==t0.y;
+        int segment_height = second_half ? t2.y-t1.y : t1.y-t0.y;
+        float alpha = (float)i/total_height;
+        float beta  = (float)(i-(second_half ? t1.y-t0.y : 0))/segment_height; 
+        //计算A,B两点的坐标
+        Vector2i A =               t0 + (t2-t0)*alpha;
+        Vector2i B = second_half ? t1 + (t2-t1)*beta : t0 + (t1-t0)*beta;
+        if (A.x>B.x) std::swap(A, B);
+        //根据A,B和当前高度对tga着色
+        for (int j=A.x; j<=B.x; j++) {
+            framebuffer.setPixel(j, t0.y+i, color);
+        }
+    }
+}
+
+void triangleTest()
+{
+    constexpr int width  = 640;
+    constexpr int height = 640;
+    Framebuffer framebuffer(width, height);
+    Vector2i t0[3] = { Vector2i{10, 70},   Vector2i{50, 160},  Vector2i{70, 80} };
+    Vector2i t1[3] = { Vector2i{180, 50},  Vector2i{150, 1},   Vector2i{70, 180} };
+    Vector2i t2[3] = { Vector2i{180, 150}, Vector2i{120, 160}, Vector2i{130, 180} };
+    triangle(framebuffer, t0[0], t0[1], t0[2], red);
+    triangle(framebuffer, t1[0], t1[1], t1[2], white);
+    triangle(framebuffer, t2[0], t2[1], t2[2], green);
+
+    draw("Triangle Rasterization",framebuffer,width,height);
+}
 int main(int argc, char** argv) {
     
     //lineTest();
-    objTest();
+    //objTest();
+    triangleTest();
     return 0;
 }

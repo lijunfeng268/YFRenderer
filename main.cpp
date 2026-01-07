@@ -114,9 +114,10 @@ void lineTest()
     std::cout << "Window closed" << std::endl;
 }
 
-std::tuple<int,int> project(Vector3 v,int width, int height) { // First of all, (x,y) is an orthogonal projection of the vector (x,y,z).
-    return { width-(v.x + 1.) *  width/2,   // Second, since the input models are scaled to have fit in the [-1,1]^3 world coordinates,
-             height-(v.y + 1.) * height/2 }; // we want to shift the vector (x,y) and then scale it to span the entire screen.
+std::tuple<Vector2i,real> project(Vector3 v,int width, int height) { // First of all, (x,y) is an orthogonal projection of the vector (x,y,z).
+    return { Vector2i{ width- (Int32)(v.x + 1.) *  width/2,   // Second, since the input models are scaled to have fit in the [-1,1]^3 world coordinates,
+                       height-(Int32)(v.y + 1.) * height/2 }, // we want to shift the vector (x,y) and then scale it to span the entire screen.
+            v.z };
 }
 
 void objTest()
@@ -127,43 +128,70 @@ void objTest()
     std::string modelFile = "D:/github/YFRender/asset/diablo3_pose.obj";
     Model model(modelFile);
     for (int i=0; i<model.nfaces(); i++) { // iterate through all triangles
-        auto [ax, ay] = project(model.Position[model.Faces[i].vtxIdx[0]], width, height);
-        auto [bx, by] = project(model.Position[model.Faces[i].vtxIdx[1]], width, height);
-        auto [cx, cy] = project(model.Position[model.Faces[i].vtxIdx[2]], width, height);
+        auto [a, az] = project(model.Position[model.Faces[i].vtxIdx[0]], width, height);
+        auto [b, bz] = project(model.Position[model.Faces[i].vtxIdx[1]], width, height);
+        auto [c, cz] = project(model.Position[model.Faces[i].vtxIdx[2]], width, height);
         // OBJFace face = model.Faces[i];
         // Vector3 a = model.Position[face.vtxIdx[0]];
         // Vector3 b = model.Position[face.vtxIdx[1]];
         // Vector3 c = model.Position[face.vtxIdx[2]];
-        line(Vector2i{ax, ay}, Vector2i{bx, by}, framebuffer, red);
-        line(Vector2i{bx, by}, Vector2i{cx, cy}, framebuffer, red);
-        line(Vector2i{cx, cy}, Vector2i{ax, ay}, framebuffer, red);
+        line(a, b, framebuffer, red);
+        line(b, c, framebuffer, red);
+        line(c, a, framebuffer, red);
     }
     draw("Model Viewer",framebuffer,width,height);
 }
 
-void triangle(Framebuffer& framebuffer,Vector2i t0, Vector2i t1, Vector2i t2, Color color) 
+real signed_triangle_area(int ax, int ay, int bx, int by, int cx, int cy) {
+    return .5*((by-ay)*(bx+ax) + (cy-by)*(cx+bx) + (ay-cy)*(ax+cx));
+}
+
+void triangle(Framebuffer& framebuffer,Vector2i t0, Vector2i t1, Vector2i t2,
+    real az, real bz, real cz, Color color) 
 {
-//三角形面积为0
-    if (t0.y==t1.y && t0.y==t2.y) return;
-    //根据y的大小对坐标进行排序
-    if (t0.y>t1.y) std::swap(t0, t1);
-    if (t0.y>t2.y) std::swap(t0, t2);
-    if (t1.y>t2.y) std::swap(t1, t2);
-    int total_height = t2.y-t0.y;
-    //以高度差作为循环控制变量，此时不需要考虑斜率，因为着色完后每行都会被填充
-    for (int i=0; i<total_height; i++) {
-        //根据t1将三角形分割为上下两部分
-        bool second_half = i>t1.y-t0.y || t1.y==t0.y;
-        int segment_height = second_half ? t2.y-t1.y : t1.y-t0.y;
-        float alpha = (float)i/total_height;
-        float beta  = (float)(i-(second_half ? t1.y-t0.y : 0))/segment_height; 
-        //计算A,B两点的坐标
-        Vector2i A =               t0 + (t2-t0)*alpha;
-        Vector2i B = second_half ? t1 + (t2-t1)*beta : t0 + (t1-t0)*beta;
-        if (A.x>B.x) std::swap(A, B);
-        //根据A,B和当前高度对tga着色
-        for (int j=A.x; j<=B.x; j++) {
-            framebuffer.setPixel(j, t0.y+i, color);
+    int bbminx = std::min(std::min(t0.x, t1.x), t2.x); // bounding box for the triangle
+    int bbminy = std::min(std::min(t0.y, t1.y), t2.y); // defined by its top left and bottom right corners
+    int bbmaxx = std::max(std::max(t0.x, t1.x), t2.x);
+    int bbmaxy = std::max(std::max(t0.y, t1.y), t2.y);
+    real total_area = signed_triangle_area(t0.x, t0.y, t1.x, t1.y, t2.x, t2.y);
+    if (total_area<1.0) 
+        return;
+
+    for (int x=bbminx; x<=bbmaxx; x++) {
+        for (int y=bbminy; y<=bbmaxy; y++) {
+            double alpha = signed_triangle_area(x, y, t1.x, t1.y, t2.x, t2.y) / total_area;
+            double beta  = signed_triangle_area(x, y, t2.x, t2.y, t0.x, t0.y) / total_area;
+            double gamma = signed_triangle_area(x, y, t0.x, t0.y, t1.x, t1.y) / total_area;
+            if (alpha<0 || beta<0 || gamma<0) continue; // negative barycentric coordinate => the pixel is outside the triangle
+            unsigned char z = static_cast<unsigned char>(alpha * az + beta * bz + gamma * cz);
+            framebuffer.setPixel(x, y, {z,z,z,z});
+        }
+    }
+}
+
+void triangleWithColor(Framebuffer& framebuffer,Vector2i* t, real* z, Color* color)
+{
+    int bbminx = std::min(std::min(t[0].x, t[1].x), t[2].x); // bounding box for the triangle
+    int bbminy = std::min(std::min(t[0].y, t[1].y), t[2].y); // defined by its top left and bottom right corners
+    int bbmaxx = std::max(std::max(t[0].x, t[1].x), t[2].x);
+    int bbmaxy = std::max(std::max(t[0].y, t[1].y), t[2].y);
+    real total_area = signed_triangle_area(t[0].x, t[0].y, t[1].x, t[1].y, t[2].x, t[2].y);
+    if (total_area<1.0) 
+        return;
+
+    for (int x=bbminx; x<=bbmaxx; x++) {
+        for (int y=bbminy; y<=bbmaxy; y++) {
+            double alpha = signed_triangle_area(x, y, t[1].x, t[1].y, t[2].x, t[2].y) / total_area;
+            double beta  = signed_triangle_area(x, y, t[2].x, t[2].y, t[0].x, t[0].y) / total_area;
+            double gamma = signed_triangle_area(x, y, t[0].x, t[0].y, t[1].x, t[1].y) / total_area;
+            if (alpha<0 || beta<0 || gamma<0) continue; // negative barycentric coordinate => the pixel is outside the triangle
+            unsigned char a = static_cast<unsigned char>(alpha * z[0] + beta * z[1] + gamma * z[2]);
+            Color newColor = {UInt8(color[0].r * alpha + color[1].r * beta + color[2].r * gamma),
+                              UInt8(color[0].g * alpha + color[1].g * beta + color[2].g * gamma),
+                              UInt8(color[0].b * alpha + color[1].b * beta + color[2].b * gamma),
+                              255};
+
+            framebuffer.setPixel(x, y, newColor);
         }
     }
 }
@@ -173,19 +201,47 @@ void triangleTest()
     constexpr int width  = 640;
     constexpr int height = 640;
     Framebuffer framebuffer(width, height);
-    Vector2i t0[3] = { Vector2i{10, 70},   Vector2i{50, 160},  Vector2i{70, 80} };
-    Vector2i t1[3] = { Vector2i{180, 50},  Vector2i{150, 1},   Vector2i{70, 180} };
-    Vector2i t2[3] = { Vector2i{180, 150}, Vector2i{120, 160}, Vector2i{130, 180} };
-    triangle(framebuffer, t0[0], t0[1], t0[2], red);
-    triangle(framebuffer, t1[0], t1[1], t1[2], white);
-    triangle(framebuffer, t2[0], t2[1], t2[2], green);
+    // Vector2i t0[3] = { Vector2i{17, 4},   Vector2i{55, 39},  Vector2i{23, 59} };
+    // Vector2i t1[3] = { Vector2i{70, 180}, Vector2i{150, 1}, Vector2i{180, 50}    };
+    // Vector2i t2[3] = { Vector2i{130, 180}, Vector2i{120, 160}, Vector2i{180, 150} };
+    // triangle(framebuffer, t0[0], t0[1], t0[2], 13, 128, 255, red);
+    // triangle(framebuffer, t1[0], t1[1], t1[2], 13, 128, 255, white);
+    // triangle(framebuffer, t2[0], t2[1], t2[2], 13, 128, 255, green);
+
+    Vector2i t[3] = { Vector2i{70, 180}, Vector2i{150, 1}, Vector2i{180, 50} };
+    real z[3] = { 13, 128, 255 };
+    Color color[3] = { red, green, blue };
+    triangleWithColor(framebuffer, t, z, color);
 
     draw("Triangle Rasterization",framebuffer,width,height);
 }
+
+void modelRansterization()
+{
+    constexpr int width  = 640;
+    constexpr int height = 640;
+    Framebuffer framebuffer(width, height);
+    std::string modelFile = "D:/github/YFRender/asset/diablo3_pose.obj";
+    Model model(modelFile);
+    std::srand(std::time({}));
+    for (int i=0; i<model.nfaces(); i++) { // iterate through all triangles
+        auto [a, az] = project(model.Position[model.Faces[i].vtxIdx[0]], width, height);
+        auto [b, bz] = project(model.Position[model.Faces[i].vtxIdx[1]], width, height);
+        auto [c, cz] = project(model.Position[model.Faces[i].vtxIdx[2]], width, height);
+        triangle(framebuffer, a, b, c, az, bz, cz,
+        { static_cast<unsigned char>(rand() % 255),
+            static_cast<unsigned char>(rand() % 255),
+            static_cast<unsigned char>(rand() % 255),
+            static_cast<unsigned char>(rand() % 255) });
+    }
+    draw("Model Rasterization",framebuffer,width,height);
+}
+
 int main(int argc, char** argv) {
     
     //lineTest();
     //objTest();
     triangleTest();
+    //modelRansterization();
     return 0;
 }
